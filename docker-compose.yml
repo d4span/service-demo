@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  aufgaben-api:
+    build:
+      context: ./AufgabenService/AufgabenService.API
+    ports:
+      - "5001:80"
+    networks:
+      - microservice-network
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    container_name: aufgaben-api
+
+  aufgaben-client:
+    build:
+      context: ./AufgabenService/AufgabenService.Client
+    ports:
+      - "5101:80"
+    depends_on:
+      - aufgaben-api
+    networks:
+      - microservice-network
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - AufgabenApiUrl=http://aufgaben-api
+    container_name: aufgaben-client
+
+  pruefung-api:
+    build:
+      context: ./PruefungService/PruefungService.API
+    ports:
+      - "5002:80"
+    networks:
+      - microservice-network
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - AufgabenApiUrl=http://aufgaben-api
+    depends_on:
+      - aufgaben-api
+    container_name: pruefung-api
+
+  pruefung-client:
+    build:
+      context: ./PruefungService/PruefungService.Client
+    ports:
+      - "5102:80"
+    depends_on:
+      - pruefung-api
+    networks:
+      - microservice-network
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - PruefungApiUrl=http://pruefung-api
+    container_name: pruefung-client
+
+networks:
+  microservice-network:
+    driver: bridge

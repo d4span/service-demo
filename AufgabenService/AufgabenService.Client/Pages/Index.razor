@@ -1,0 +1,89 @@
+@page "/"
+@inject HttpClient Http
+@using System.Text.Json
+@using System.Text.Json.Serialization
+
+<h1>Aufgaben</h1>
+
+@if (aufgaben == null)
+{
+    <p><em>Wird geladen...</em></p>
+}
+else if (errorMessage != null)
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+}
+else
+{
+    <div class="row">
+        @foreach (var aufgabe in aufgaben)
+        {
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Aufgabe @aufgabe.Id</h5>
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">@aufgabe.Frage</h5>
+                        <ul class="list-group mt-3">
+                            @foreach (var antwort in aufgabe.Antworten)
+                            {
+                                <li class="list-group-item">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="antwort-@aufgabe.Id" id="antwort-@aufgabe.Id-@antwort.Id" @onclick="() => WähleAntwort(aufgabe.Id, antwort.Id)" disabled="@antwortGeprüft">
+                                        <label class="form-check-label" for="antwort-@aufgabe.Id-@antwort.Id">
+                                            @antwort.Text
+                                        </label>
+                                        @if (antwortGeprüft && antwort.IstRichtig)
+                                        {
+                                            <span class="badge bg-success ms-2">Richtig</span>
+                                        }
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<Aufgabe>? aufgaben;
+    private string? errorMessage;
+    private bool antwortGeprüft = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            aufgaben = await Http.GetFromJsonAsync<List<Aufgabe>>("api/aufgaben");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Laden der Aufgaben: {ex.Message}";
+        }
+    }
+
+    private void WähleAntwort(int aufgabeId, int antwortId)
+    {
+        antwortGeprüft = true;
+    }
+
+    public class Aufgabe
+    {
+        public int Id { get; set; }
+        public string Frage { get; set; } = string.Empty;
+        public List<Antwort> Antworten { get; set; } = new();
+    }
+
+    public class Antwort
+    {
+        public int Id { get; set; }
+        public string Text { get; set; } = string.Empty; 
+        public bool IstRichtig { get; set; }
+    }
+}
