@@ -92,6 +92,90 @@ app.MapGet("/api/aufgaben/{id}", (int id) =>
 .WithName("GetAufgabeById")
 .WithOpenApi();
 
+// Neue Endpunkte für die Aufgabenverwaltung
+app.MapPost("/api/aufgaben", (AufgabeErstellen aufgabeData) =>
+{
+    // Neue ID berechnen
+    var neueId = aufgaben.Count > 0 ? aufgaben.Max(a => a.Id) + 1 : 1;
+    
+    // Neue Aufgabe erstellen
+    var aufgabe = new Aufgabe
+    {
+        Id = neueId,
+        Frage = aufgabeData.Frage,
+        Antworten = new List<Antwort>()
+    };
+    
+    // IDs für die Antworten generieren
+    for (int i = 0; i < aufgabeData.Antworten.Count; i++)
+    {
+        var antwortData = aufgabeData.Antworten[i];
+        aufgabe.Antworten.Add(new Antwort
+        {
+            Id = i + 1,
+            Text = antwortData.Text,
+            IstRichtig = antwortData.IstRichtig
+        });
+    }
+    
+    // Aufgabe zur Liste hinzufügen
+    aufgaben.Add(aufgabe);
+    
+    return Results.Created($"/api/aufgaben/{aufgabe.Id}", aufgabe);
+})
+.WithName("CreateAufgabe")
+.WithOpenApi();
+
+app.MapPut("/api/aufgaben/{id}", (int id, AufgabeAktualisieren aufgabeData) =>
+{
+    // Aufgabe finden
+    var aufgabe = aufgaben.FirstOrDefault(a => a.Id == id);
+    if (aufgabe == null)
+    {
+        return Results.NotFound();
+    }
+    
+    // Aufgabe aktualisieren
+    aufgabe.Frage = aufgabeData.Frage;
+    
+    // Antworten komplett ersetzen
+    aufgabe.Antworten.Clear();
+    for (int i = 0; i < aufgabeData.Antworten.Count; i++)
+    {
+        var antwortData = aufgabeData.Antworten[i];
+        aufgabe.Antworten.Add(new Antwort
+        {
+            Id = i + 1,
+            Text = antwortData.Text,
+            IstRichtig = antwortData.IstRichtig
+        });
+    }
+    
+    return Results.Ok(aufgabe);
+})
+.WithName("UpdateAufgabe")
+.WithOpenApi();
+
+app.MapDelete("/api/aufgaben/{id}", (int id) =>
+{
+    // Aufgabe finden
+    var aufgabe = aufgaben.FirstOrDefault(a => a.Id == id);
+    if (aufgabe == null)
+    {
+        return Results.NotFound();
+    }
+    
+    // Prüfen, ob die Aufgabe gelöscht werden kann
+    // - In einer realen Anwendung würde man hier prüfen, ob die Aufgabe noch verwendet wird
+    
+    // Aufgabe löschen
+    aufgaben.Remove(aufgabe);
+    
+    return Results.NoContent();
+})
+.WithName("DeleteAufgabe")
+.WithOpenApi();
+
 app.Run();
 
 // Datenmodell für Aufgaben
@@ -107,4 +191,23 @@ public class Antwort
     public int Id { get; set; }
     public string Text { get; set; } = string.Empty;
     public bool IstRichtig { get; set; }
+}
+
+// DTOs für die API
+public class AufgabeErstellen
+{
+    public string Frage { get; set; } = string.Empty;
+    public List<AntwortErstellen> Antworten { get; set; } = new();
+}
+
+public class AntwortErstellen
+{
+    public string Text { get; set; } = string.Empty;
+    public bool IstRichtig { get; set; }
+}
+
+public class AufgabeAktualisieren
+{
+    public string Frage { get; set; } = string.Empty;
+    public List<AntwortErstellen> Antworten { get; set; } = new();
 }

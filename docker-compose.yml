@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   aufgaben-api:
     build:
       context: ./AufgabenService/AufgabenService.API
     ports:
-      - "5001:8080"  # Port 5001 auf Host wird auf 8080 im Container gemappt
+      - "5001:8080"
     networks:
       - microservice-network
     environment:
@@ -30,7 +28,7 @@ services:
     build:
       context: ./PruefungService/PruefungService.API
     ports:
-      - "5002:8080"  # Port 5002 auf Host wird auf 8080 im Container gemappt
+      - "5002:8080"
     networks:
       - microservice-network
     environment:

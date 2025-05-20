@@ -1,9 +1,8 @@
 @page "/"
 @inject HttpClient Http
+@inject IJSRuntime JS
 @using System.Text.Json
 @using System.Text.Json.Serialization
-
-<h1>Aufgaben</h1>
 
 @if (aufgaben == null)
 {
@@ -15,8 +14,77 @@ else if (errorMessage != null)
         @errorMessage
     </div>
 }
+else if (showCreateAufgabeForm || showEditAufgabeForm)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>@(showCreateAufgabeForm ? "Neue Aufgabe erstellen" : "Aufgabe bearbeiten")</h5>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label for="frage" class="form-label">Frage</label>
+                <input type="text" class="form-control" id="frage" @bind="aktuelleAufgabe.Frage" />
+            </div>
+            
+            <h6>Antworten:</h6>
+            @for (int i = 0; i < aktuelleAufgabe.Antworten.Count; i++)
+            {
+                var index = i;
+                <div class="card mb-2">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-2">
+                                    <label class="form-label">Antworttext</label>
+                                    <input type="text" class="form-control" @bind="aktuelleAufgabe.Antworten[index].Text" />
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="radio" name="richtigeAntwort" id="antwort-@i" 
+                                           checked="@aktuelleAufgabe.Antworten[index].IstRichtig"
+                                           @onchange="@(e => SetRichtigeAntwort(index))" />
+                                    <label class="form-check-label" for="antwort-@i">
+                                        Richtige Antwort
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-1">
+                                <button class="btn btn-sm btn-danger mt-4" @onclick="() => RemoveAntwort(index)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+            
+            <div class="mb-3">
+                <button class="btn btn-outline-primary" @onclick="AddAntwort">+ Antwort hinzufügen</button>
+            </div>
+            
+            <div class="mt-4">
+                @if (showCreateAufgabeForm)
+                {
+                    <button class="btn btn-success" @onclick="CreateAufgabe">Aufgabe erstellen</button>
+                }
+                else
+                {
+                    <button class="btn btn-success" @onclick="UpdateAufgabe">Änderungen speichern</button>
+                }
+                <button class="btn btn-secondary ms-2" @onclick="CancelEdit">Abbrechen</button>
+            </div>
+        </div>
+    </div>
+}
 else
 {
+    <div class="row mb-4">
+        <div class="col-12">
+            <button class="btn btn-success" @onclick="ShowCreateAufgabeForm">Neue Aufgabe erstellen</button>
+        </div>
+    </div>
+
     <div class="row">
         @foreach (var aufgabe in aufgaben)
         {
@@ -44,6 +112,10 @@ else
                                 </li>
                             }
                         </ul>
+                        <div class="btn-group mt-3">
+                            <button class="btn btn-primary" @onclick="() => ShowEditAufgabeForm(aufgabe)">Bearbeiten</button>
+                            <button class="btn btn-danger" @onclick="() => DeleteAufgabe(aufgabe.Id)">Löschen</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -55,6 +127,11 @@ else
     private List<Aufgabe>? aufgaben;
     private string? errorMessage;
     private bool antwortGeprüft = false;
+    
+    // Formular-Variablen
+    private bool showCreateAufgabeForm = false;
+    private bool showEditAufgabeForm = false;
+    private AufgabeViewModel aktuelleAufgabe = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -72,7 +149,262 @@ else
     {
         antwortGeprüft = true;
     }
-
+    
+    // Formular für neue Aufgabe anzeigen
+    private void ShowCreateAufgabeForm()
+    {
+        aktuelleAufgabe = new AufgabeViewModel
+        {
+            Frage = string.Empty,
+            Antworten = new List<AntwortViewModel>
+            {
+                new() { Text = string.Empty, IstRichtig = true },
+                new() { Text = string.Empty, IstRichtig = false },
+                new() { Text = string.Empty, IstRichtig = false },
+                new() { Text = string.Empty, IstRichtig = false }
+            }
+        };
+        
+        showCreateAufgabeForm = true;
+        showEditAufgabeForm = false;
+    }
+    
+    // Formular für Aufgabe bearbeiten anzeigen
+    private void ShowEditAufgabeForm(Aufgabe aufgabe)
+    {
+        aktuelleAufgabe = new AufgabeViewModel
+        {
+            Id = aufgabe.Id,
+            Frage = aufgabe.Frage,
+            Antworten = aufgabe.Antworten.Select(a => new AntwortViewModel
+            {
+                Id = a.Id,
+                Text = a.Text,
+                IstRichtig = a.IstRichtig
+            }).ToList()
+        };
+        
+        showCreateAufgabeForm = false;
+        showEditAufgabeForm = true;
+    }
+    
+    // Bearbeitung abbrechen
+    private void CancelEdit()
+    {
+        showCreateAufgabeForm = false;
+        showEditAufgabeForm = false;
+    }
+    
+    // Antwort hinzufügen
+    private void AddAntwort()
+    {
+        aktuelleAufgabe.Antworten.Add(new AntwortViewModel
+        {
+            Text = string.Empty,
+            IstRichtig = false
+        });
+    }
+    
+    // Antwort entfernen
+    private void RemoveAntwort(int index)
+    {
+        if (aktuelleAufgabe.Antworten.Count > 2)  // Mindestens 2 Antworten beibehalten
+        {
+            bool warRichtig = aktuelleAufgabe.Antworten[index].IstRichtig;
+            aktuelleAufgabe.Antworten.RemoveAt(index);
+            
+            // Falls die richtige Antwort entfernt wurde, die erste Antwort als richtig markieren
+            if (warRichtig && !aktuelleAufgabe.Antworten.Any(a => a.IstRichtig))
+            {
+                aktuelleAufgabe.Antworten[0].IstRichtig = true;
+            }
+        }
+    }
+    
+    // Richtige Antwort festlegen
+    private void SetRichtigeAntwort(int index)
+    {
+        foreach (var antwort in aktuelleAufgabe.Antworten)
+        {
+            antwort.IstRichtig = false;
+        }
+        
+        aktuelleAufgabe.Antworten[index].IstRichtig = true;
+    }
+    
+    // Aufgabe erstellen
+    private async Task CreateAufgabe()
+    {
+        try
+        {
+            // Validierung
+            if (string.IsNullOrWhiteSpace(aktuelleAufgabe.Frage))
+            {
+                errorMessage = "Bitte geben Sie eine Frage ein.";
+                return;
+            }
+            
+            if (aktuelleAufgabe.Antworten.Count < 2)
+            {
+                errorMessage = "Eine Aufgabe muss mindestens 2 Antworten haben.";
+                return;
+            }
+            
+            if (!aktuelleAufgabe.Antworten.Any(a => a.IstRichtig))
+            {
+                errorMessage = "Bitte markieren Sie eine Antwort als richtig.";
+                return;
+            }
+            
+            if (aktuelleAufgabe.Antworten.Any(a => string.IsNullOrWhiteSpace(a.Text)))
+            {
+                errorMessage = "Alle Antworten müssen einen Text haben.";
+                return;
+            }
+            
+            // DTO erstellen
+            var aufgabeDto = new AufgabeErstellenDto
+            {
+                Frage = aktuelleAufgabe.Frage,
+                Antworten = aktuelleAufgabe.Antworten.Select(a => new AntwortErstellenDto
+                {
+                    Text = a.Text,
+                    IstRichtig = a.IstRichtig
+                }).ToList()
+            };
+            
+            // API-Aufruf
+            var response = await Http.PostAsJsonAsync("api/aufgaben", aufgabeDto);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var neueAufgabe = await response.Content.ReadFromJsonAsync<Aufgabe>();
+                if (aufgaben != null && neueAufgabe != null)
+                {
+                    aufgaben.Add(neueAufgabe);
+                }
+                
+                showCreateAufgabeForm = false;
+                errorMessage = null;
+            }
+            else
+            {
+                errorMessage = $"Fehler beim Erstellen der Aufgabe: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Erstellen der Aufgabe: {ex.Message}";
+        }
+    }
+    
+    // Aufgabe aktualisieren
+    private async Task UpdateAufgabe()
+    {
+        try
+        {
+            // Validierung wie bei CreateAufgabe
+            if (string.IsNullOrWhiteSpace(aktuelleAufgabe.Frage))
+            {
+                errorMessage = "Bitte geben Sie eine Frage ein.";
+                return;
+            }
+            
+            if (aktuelleAufgabe.Antworten.Count < 2)
+            {
+                errorMessage = "Eine Aufgabe muss mindestens 2 Antworten haben.";
+                return;
+            }
+            
+            if (!aktuelleAufgabe.Antworten.Any(a => a.IstRichtig))
+            {
+                errorMessage = "Bitte markieren Sie eine Antwort als richtig.";
+                return;
+            }
+            
+            if (aktuelleAufgabe.Antworten.Any(a => string.IsNullOrWhiteSpace(a.Text)))
+            {
+                errorMessage = "Alle Antworten müssen einen Text haben.";
+                return;
+            }
+            
+            // DTO erstellen
+            var aufgabeDto = new AufgabeAktualisierenDto
+            {
+                Frage = aktuelleAufgabe.Frage,
+                Antworten = aktuelleAufgabe.Antworten.Select(a => new AntwortErstellenDto
+                {
+                    Text = a.Text,
+                    IstRichtig = a.IstRichtig
+                }).ToList()
+            };
+            
+            // API-Aufruf
+            var response = await Http.PutAsJsonAsync($"api/aufgaben/{aktuelleAufgabe.Id}", aufgabeDto);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var aktualisierteAufgabe = await response.Content.ReadFromJsonAsync<Aufgabe>();
+                if (aufgaben != null && aktualisierteAufgabe != null)
+                {
+                    var index = aufgaben.FindIndex(a => a.Id == aktualisierteAufgabe.Id);
+                    if (index >= 0)
+                    {
+                        aufgaben[index] = aktualisierteAufgabe;
+                    }
+                }
+                
+                showEditAufgabeForm = false;
+                errorMessage = null;
+            }
+            else
+            {
+                errorMessage = $"Fehler beim Aktualisieren der Aufgabe: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Aktualisieren der Aufgabe: {ex.Message}";
+        }
+    }
+    
+    // Aufgabe löschen
+    private async Task DeleteAufgabe(int id)
+    {
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("confirm", "Sind Sie sicher, dass Sie diese Aufgabe löschen möchten?"))
+            {
+                return;
+            }
+            
+            var response = await Http.DeleteAsync($"api/aufgaben/{id}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                if (aufgaben != null)
+                {
+                    var aufgabeToDelete = aufgaben.FirstOrDefault(a => a.Id == id);
+                    if (aufgabeToDelete != null)
+                    {
+                        aufgaben.Remove(aufgabeToDelete);
+                    }
+                }
+                
+                errorMessage = null;
+            }
+            else
+            {
+                errorMessage = $"Fehler beim Löschen der Aufgabe: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Löschen der Aufgabe: {ex.Message}";
+        }
+    }
+    
+    // Datenmodelle
     public class Aufgabe
     {
         public int Id { get; set; }
@@ -85,5 +417,39 @@ else
         public int Id { get; set; }
         public string Text { get; set; } = string.Empty; 
         public bool IstRichtig { get; set; }
+    }
+    
+    // View-Modelle für das Formular
+    public class AufgabeViewModel
+    {
+        public int Id { get; set; }
+        public string Frage { get; set; } = string.Empty;
+        public List<AntwortViewModel> Antworten { get; set; } = new();
+    }
+    
+    public class AntwortViewModel
+    {
+        public int Id { get; set; }
+        public string Text { get; set; } = string.Empty;
+        public bool IstRichtig { get; set; }
+    }
+    
+    // DTOs für API-Aufrufe
+    public class AufgabeErstellenDto
+    {
+        public string Frage { get; set; } = string.Empty;
+        public List<AntwortErstellenDto> Antworten { get; set; } = new();
+    }
+    
+    public class AntwortErstellenDto
+    {
+        public string Text { get; set; } = string.Empty;
+        public bool IstRichtig { get; set; }
+    }
+    
+    public class AufgabeAktualisierenDto
+    {
+        public string Frage { get; set; } = string.Empty;
+        public List<AntwortErstellenDto> Antworten { get; set; } = new();
     }
 }
