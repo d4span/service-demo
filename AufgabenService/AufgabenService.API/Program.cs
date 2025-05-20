@@ -31,21 +31,6 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors();
 
-// Datenmodell für Aufgaben
-public class Aufgabe
-{
-    public int Id { get; set; }
-    public string Frage { get; set; } = string.Empty;
-    public List<Antwort> Antworten { get; set; } = new();
-}
-
-public class Antwort
-{
-    public int Id { get; set; }
-    public string Text { get; set; } = string.Empty;
-    public bool IstRichtig { get; set; }
-}
-
 // In-Memory Datenquelle für Aufgaben
 List<Aufgabe> aufgaben = new()
 {
@@ -108,3 +93,18 @@ app.MapGet("/api/aufgaben/{id}", (int id) =>
 .WithOpenApi();
 
 app.Run();
+
+// Datenmodell für Aufgaben
+public class Aufgabe
+{
+    public int Id { get; set; }
+    public string Frage { get; set; } = string.Empty;
+    public List<Antwort> Antworten { get; set; } = new();
+}
+
+public class Antwort
+{
+    public int Id { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public bool IstRichtig { get; set; }
+}

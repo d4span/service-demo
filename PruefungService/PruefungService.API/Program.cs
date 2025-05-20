@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Net.Http.Json;
-using System.Text.Json;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,14 +16,15 @@ builder.Services.AddCors(options =>
         });
 });
 
-// HttpClient für die Kommunikation mit dem AufgabenService
-builder.Services.AddHttpClient("AufgabenService", client =>
+// HttpClient für die Kommunikation mit AufgabenService
+builder.Services.AddHttpClient("AufgabenAPI", client =>
 {
-    // Die URL des AufgabenService aus der Umgebungsvariable oder Fallback
-    var aufgabenApiUrl = builder.Configuration["AufgabenApiUrl"] ?? "http://localhost:5001";
-    client.BaseAddress = new Uri(aufgabenApiUrl);
+    // API URL aus der Umgebungsvariable oder Fallback
+    var apiUrl = builder.Configuration["AufgabenApiUrl"] ?? "http://localhost:5001";
+    client.BaseAddress = new Uri(apiUrl);
 });
 
+// Add services to the container.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -39,48 +40,24 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors();
 
-// Datenmodelle
-public class Pruefung
-{
-    public int Id { get; set; }
-    public string Titel { get; set; } = string.Empty;
-    public int AktuelleAufgabeId { get; set; }
-    public bool IstGestartet { get; set; }
-    public DateTime? StartZeit { get; set; }
-}
-
-public class Aufgabe
-{
-    public int Id { get; set; }
-    public string Frage { get; set; } = string.Empty;
-    public List<Antwort> Antworten { get; set; } = new();
-}
-
-public class Antwort
-{
-    public int Id { get; set; }
-    public string Text { get; set; } = string.Empty;
-    public bool IstRichtig { get; set; }
-}
-
 // In-Memory Datenquelle für Prüfungen
 List<Pruefung> pruefungen = new()
 {
-    new Pruefung
-    {
-        Id = 1,
-        Titel = "Allgemeinwissen Prüfung",
-        AktuelleAufgabeId = 1,
-        IstGestartet = false,
-        StartZeit = null
+    new Pruefung 
+    { 
+        Id = 1, 
+        Titel = "Grundlagen der Informatik", 
+        AufgabenIds = new List<int> { 1, 2, 3 },
+        Datum = DateTime.Now.AddDays(7),
+        Zeitlimit = 15
     },
-    new Pruefung
-    {
-        Id = 2,
-        Titel = "Programmierung Prüfung",
-        AktuelleAufgabeId = 2,
-        IstGestartet = false,
-        StartZeit = null
+    new Pruefung 
+    { 
+        Id = 2, 
+        Titel = "Programmierung mit C#", 
+        AufgabenIds = new List<int> { 2, 3 },
+        Datum = DateTime.Now.AddDays(14),
+        Zeitlimit = 20
     }
 };
 
@@ -104,38 +81,76 @@ app.MapGet("/api/pruefung/{id}", (int id) =>
 .WithName("GetPruefungById")
 .WithOpenApi();
 
-app.MapPost("/api/pruefung/{id}/start", async (int id, IHttpClientFactory httpClientFactory) =>
+app.MapGet("/api/pruefung/{id}/aufgaben", async (int id, IHttpClientFactory clientFactory) =>
 {
+    // Prüfung finden
     var pruefung = pruefungen.FirstOrDefault(p => p.Id == id);
     if (pruefung == null)
     {
-        return Results.NotFound();
+        return Results.NotFound("Prüfung nicht gefunden");
     }
 
-    pruefung.IstGestartet = true;
-    pruefung.StartZeit = DateTime.Now;
-
-    // Zugriff auf den AufgabenService, um die aktuelle Aufgabe zu holen
+    // HttpClient für AufgabenService erstellen
+    var client = clientFactory.CreateClient("AufgabenAPI");
+    
+    // Aufgaben für die Prüfung abrufen
     try
     {
-        var client = httpClientFactory.CreateClient("AufgabenService");
-        var aufgabe = await client.GetFromJsonAsync<Aufgabe>($"api/aufgaben/{pruefung.AktuelleAufgabeId}");
-        
-        // Neue Antwort mit Prüfungs- und Aufgabeninformationen
-        var response = new
+        var alleAufgaben = await client.GetFromJsonAsync<List<Aufgabe>>("api/aufgaben");
+        if (alleAufgaben == null)
         {
-            Pruefung = pruefung,
-            AktuelleAufgabe = aufgabe
-        };
+            return Results.Problem("Keine Aufgaben gefunden");
+        }
+
+        // Nur die Aufgaben zurückgeben, die in der Prüfung enthalten sind
+        var pruefungsAufgaben = alleAufgaben.Where(a => pruefung.AufgabenIds.Contains(a.Id)).ToList();
         
-        return Results.Ok(response);
+        return Results.Ok(pruefungsAufgaben);
     }
     catch (Exception ex)
     {
-        return Results.Problem($"Fehler beim Abrufen der Aufgabe: {ex.Message}");
+        return Results.Problem($"Fehler beim Abrufen der Aufgaben: {ex.Message}");
     }
 })
-.WithName("StartPruefung")
+.WithName("GetAufgabenFuerPruefung")
+.WithOpenApi();
+
+app.MapPost("/api/pruefung", (Pruefung pruefung) =>
+{
+    // Neue ID festlegen
+    pruefung.Id = pruefungen.Count > 0 ? pruefungen.Max(p => p.Id) + 1 : 1;
+    
+    // Prüfung zur Liste hinzufügen
+    pruefungen.Add(pruefung);
+    
+    return Results.Created($"/api/pruefung/{pruefung.Id}", pruefung);
+})
+.WithName("CreatePruefung")
 .WithOpenApi();
 
 app.Run();
+
+// Datenmodell für Aufgaben
+public class Aufgabe
+{
+    public int Id { get; set; }
+    public string Frage { get; set; } = string.Empty;
+    public List<Antwort> Antworten { get; set; } = new();
+}
+
+public class Antwort
+{
+    public int Id { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public bool IstRichtig { get; set; }
+}
+
+// Datenmodell für Prüfungen
+public class Pruefung
+{
+    public int Id { get; set; }
+    public string Titel { get; set; } = string.Empty;
+    public List<int> AufgabenIds { get; set; } = new();
+    public DateTime Datum { get; set; } = DateTime.Now;
+    public int Zeitlimit { get; set; } = 30; // in Minuten
+}

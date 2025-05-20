@@ -1,0 +1,220 @@
+@page "/"
+@inject HttpClient Http
+@using System.Text.Json
+@using System.Text.Json.Serialization
+
+<h1>Online-Prüfungen</h1>
+
+@if (pruefungen == null)
+{
+    <p><em>Wird geladen...</em></p>
+}
+else if (errorMessage != null)
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+}
+else if (aktuellePruefungsaufgaben != null)
+{
+    <div class="mb-4">
+        <h2>@aktuellePruefung?.Titel</h2>
+        <p>Zeitlimit: @aktuellePruefung?.Zeitlimit Minuten</p>
+        <p>Verbleibende Zeit: @verbleibendeZeit Sekunden</p>
+        <div class="progress mb-3">
+            <div class="progress-bar" role="progressbar" style="width: @zeitBalkenBreite%" aria-valuenow="@zeitBalkenBreite" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+    </div>
+
+    <div class="row">
+        @foreach (var aufgabe in aktuellePruefungsaufgaben)
+        {
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Aufgabe @aufgabe.Id</h5>
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">@aufgabe.Frage</h5>
+                        <ul class="list-group mt-3">
+                            @foreach (var antwort in aufgabe.Antworten)
+                            {
+                                <li class="list-group-item">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="antwort-@aufgabe.Id" id="antwort-@aufgabe.Id-@antwort.Id" @onclick="() => WähleAntwort(aufgabe.Id, antwort.Id)" disabled="@pruefungBeendet">
+                                        <label class="form-check-label" for="antwort-@aufgabe.Id-@antwort.Id">
+                                            @antwort.Text
+                                        </label>
+                                        @if (pruefungBeendet && antwort.IstRichtig)
+                                        {
+                                            <span class="badge bg-success ms-2">Richtig</span>
+                                        }
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-12">
+            <button class="btn btn-primary" @onclick="PruefungBeenden" disabled="@pruefungBeendet">Prüfung abschließen</button>
+            <button class="btn btn-secondary ms-2" @onclick="ZurückZuPruefungsliste">Zurück zur Übersicht</button>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="alert alert-info">
+                Wählen Sie eine Prüfung aus der Liste und klicken Sie auf "Prüfung starten", um zu beginnen.
+            </div>
+        </div>
+        
+        @foreach (var pruefung in pruefungen)
+        {
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Prüfung @pruefung.Id</h5>
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">@pruefung.Titel</h5>
+                        <p class="card-text">
+                            <strong>Datum:</strong> @pruefung.Datum.ToShortDateString()<br />
+                            <strong>Zeitlimit:</strong> @pruefung.Zeitlimit Minuten<br />
+                            <strong>Anzahl Aufgaben:</strong> @pruefung.AufgabenIds.Count
+                        </p>
+                        <button class="btn btn-success" @onclick="() => StartePruefung(pruefung.Id)">Prüfung starten</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<Pruefung>? pruefungen;
+    private List<Aufgabe>? aktuellePruefungsaufgaben;
+    private Pruefung? aktuellePruefung;
+    private string? errorMessage;
+    private bool pruefungBeendet = false;
+    private int verbleibendeZeit = 0;
+    private double zeitBalkenBreite = 100;
+    private System.Threading.Timer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            pruefungen = await Http.GetFromJsonAsync<List<Pruefung>>("api/pruefung");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Laden der Prüfungen: {ex.Message}";
+        }
+    }
+
+    private async Task StartePruefung(int pruefungId)
+    {
+        try
+        {
+            // Prüfung abrufen
+            aktuellePruefung = await Http.GetFromJsonAsync<Pruefung>($"api/pruefung/{pruefungId}");
+            
+            // Aufgaben für diese Prüfung abrufen
+            aktuellePruefungsaufgaben = await Http.GetFromJsonAsync<List<Aufgabe>>($"api/pruefung/{pruefungId}/aufgaben");
+            
+            pruefungBeendet = false;
+            
+            // Timer für das Zeitlimit starten
+            if (aktuellePruefung != null)
+            {
+                verbleibendeZeit = aktuellePruefung.Zeitlimit * 60; // Umrechnung in Sekunden
+                zeitBalkenBreite = 100;
+                
+                // Timer für das Herunterzählen der Zeit
+                timer = new System.Threading.Timer(TimerCallback, null, 0, 1000);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Starten der Prüfung: {ex.Message}";
+        }
+    }
+
+    private void TimerCallback(object? state)
+    {
+        if (verbleibendeZeit > 0)
+        {
+            verbleibendeZeit--;
+            
+            if (aktuellePruefung != null)
+            {
+                zeitBalkenBreite = (double)verbleibendeZeit / (aktuellePruefung.Zeitlimit * 60) * 100;
+            }
+            
+            InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            PruefungBeenden();
+        }
+    }
+
+    private void WähleAntwort(int aufgabeId, int antwortId)
+    {
+        // Hier könnte die Antwort gespeichert werden
+    }
+
+    private void PruefungBeenden()
+    {
+        pruefungBeendet = true;
+        
+        // Timer stoppen
+        timer?.Change(Timeout.Infinite, Timeout.Infinite);
+        timer?.Dispose();
+        timer = null;
+        
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ZurückZuPruefungsliste()
+    {
+        aktuellePruefungsaufgaben = null;
+        aktuellePruefung = null;
+        pruefungBeendet = false;
+        
+        // Timer stoppen falls noch aktiv
+        timer?.Change(Timeout.Infinite, Timeout.Infinite);
+        timer?.Dispose();
+        timer = null;
+    }
+
+    public class Pruefung
+    {
+        public int Id { get; set; }
+        public string Titel { get; set; } = string.Empty;
+        public List<int> AufgabenIds { get; set; } = new();
+        public DateTime Datum { get; set; }
+        public int Zeitlimit { get; set; } = 30; // in Minuten
+    }
+
+    public class Aufgabe
+    {
+        public int Id { get; set; }
+        public string Frage { get; set; } = string.Empty;
+        public List<Antwort> Antworten { get; set; } = new();
+    }
+
+    public class Antwort
+    {
+        public int Id { get; set; }
+        public string Text { get; set; } = string.Empty; 
+        public bool IstRichtig { get; set; }
+    }
+}
