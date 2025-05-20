@@ -1,11 +1,12 @@
 @page "/"
 @inject HttpClient Http
+@inject IJSRuntime JS
 @using System.Text.Json
 @using System.Text.Json.Serialization
 
 <h1>Online-Prüfungen</h1>
 
-@if (pruefungen == null)
+@if (pruefungen == null || alleAufgaben == null)
 {
     <p><em>Wird geladen...</em></p>
 }
@@ -66,12 +67,90 @@ else if (aktuellePruefungsaufgaben != null)
         </div>
     </div>
 }
+else if (showCreatePruefungForm)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Neue Prüfung erstellen</h5>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label for="titel" class="form-label">Titel</label>
+                <input type="text" class="form-control" id="titel" @bind="neuePruefung.Titel" />
+            </div>
+            <div class="mb-3">
+                <label for="datum" class="form-label">Datum</label>
+                <input type="date" class="form-control" id="datum" @bind="neuePruefung.Datum" />
+            </div>
+            <div class="mb-3">
+                <label for="zeitlimit" class="form-label">Zeitlimit (Minuten)</label>
+                <input type="number" class="form-control" id="zeitlimit" @bind="neuePruefung.Zeitlimit" min="1" max="120" />
+            </div>
+            <div class="mb-3">
+                <h6>Aufgaben auswählen:</h6>
+                <div class="row">
+                    @foreach (var aufgabe in alleAufgaben)
+                    {
+                        <div class="col-md-6 mb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="aufgabe-@aufgabe.Id" 
+                                       @onchange="@(e => ToggleAufgabeSelection(aufgabe.Id, e.Value != null && (bool)e.Value))" />
+                                <label class="form-check-label" for="aufgabe-@aufgabe.Id">
+                                    @aufgabe.Frage
+                                </label>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+            <button class="btn btn-success" @onclick="CreatePruefung">Prüfung erstellen</button>
+            <button class="btn btn-secondary ms-2" @onclick="AbortCreatePruefung">Abbrechen</button>
+        </div>
+    </div>
+}
+else if (showEditAufgabenForm && selectedPruefung != null)
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Aufgaben für Prüfung "@selectedPruefung.Titel" bearbeiten</h5>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <h6>Aufgaben auswählen:</h6>
+                <div class="row">
+                    @foreach (var aufgabe in alleAufgaben)
+                    {
+                        <div class="col-md-6 mb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="edit-aufgabe-@aufgabe.Id" 
+                                       checked="@selectedPruefungAufgabenIds.Contains(aufgabe.Id)"
+                                       @onchange="@(e => ToggleEditAufgabeSelection(aufgabe.Id, e.Value != null && (bool)e.Value))" />
+                                <label class="form-check-label" for="edit-aufgabe-@aufgabe.Id">
+                                    @aufgabe.Frage
+                                </label>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+            <button class="btn btn-success" @onclick="UpdatePruefungAufgaben">Änderungen speichern</button>
+            <button class="btn btn-secondary ms-2" @onclick="AbortEditAufgaben">Abbrechen</button>
+        </div>
+    </div>
+}
 else
 {
+    <div class="row mb-4">
+        <div class="col-12">
+            <button class="btn btn-success" @onclick="ShowCreatePruefungForm">Neue Prüfung erstellen</button>
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-12 mb-4">
             <div class="alert alert-info">
                 Wählen Sie eine Prüfung aus der Liste und klicken Sie auf "Prüfung starten", um zu beginnen.
+                Oder bearbeiten Sie die Aufgaben einer bestehenden Prüfung.
             </div>
         </div>
         
@@ -89,7 +168,11 @@ else
                             <strong>Zeitlimit:</strong> @pruefung.Zeitlimit Minuten<br />
                             <strong>Anzahl Aufgaben:</strong> @pruefung.AufgabenIds.Count
                         </p>
-                        <button class="btn btn-success" @onclick="() => StartePruefung(pruefung.Id)">Prüfung starten</button>
+                        <div class="btn-group">
+                            <button class="btn btn-primary" @onclick="() => StartePruefung(pruefung.Id)">Prüfung starten</button>
+                            <button class="btn btn-secondary" @onclick="() => ShowEditAufgabenForm(pruefung)">Aufgaben bearbeiten</button>
+                            <button class="btn btn-danger" @onclick="() => DeletePruefung(pruefung.Id)">Löschen</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -99,23 +182,37 @@ else
 
 @code {
     private List<Pruefung>? pruefungen;
+    private List<Aufgabe>? alleAufgaben;
     private List<Aufgabe>? aktuellePruefungsaufgaben;
     private Pruefung? aktuellePruefung;
+    private Pruefung? selectedPruefung;
     private string? errorMessage;
+    
     private bool pruefungBeendet = false;
     private int verbleibendeZeit = 0;
     private double zeitBalkenBreite = 100;
     private System.Threading.Timer? timer;
+    
+    // Neue Prüfung erstellen
+    private bool showCreatePruefungForm = false;
+    private PruefungErstellen neuePruefung = new();
+    private List<int> selectedAufgabenIds = new();
+    
+    // Prüfungsaufgaben bearbeiten
+    private bool showEditAufgabenForm = false;
+    private List<int> selectedPruefungAufgabenIds = new();
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            // Lade Prüfungen und alle Aufgaben
             pruefungen = await Http.GetFromJsonAsync<List<Pruefung>>("api/pruefung");
+            alleAufgaben = await Http.GetFromJsonAsync<List<Aufgabe>>("api/aufgaben");
         }
         catch (Exception ex)
         {
-            errorMessage = $"Fehler beim Laden der Prüfungen: {ex.Message}";
+            errorMessage = $"Fehler beim Laden der Daten: {ex.Message}";
         }
     }
 
@@ -195,12 +292,186 @@ else
         timer = null;
     }
 
+    // Prüfung erstellen - Formular anzeigen
+    private void ShowCreatePruefungForm()
+    {
+        neuePruefung = new PruefungErstellen
+        {
+            Titel = string.Empty,
+            Datum = DateTime.Now.AddDays(7),
+            Zeitlimit = 30
+        };
+        selectedAufgabenIds = new List<int>();
+        showCreatePruefungForm = true;
+    }
+
+    // Aufgabe zur Auswahl hinzufügen/entfernen
+    private void ToggleAufgabeSelection(int aufgabeId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            if (!selectedAufgabenIds.Contains(aufgabeId))
+            {
+                selectedAufgabenIds.Add(aufgabeId);
+            }
+        }
+        else
+        {
+            selectedAufgabenIds.Remove(aufgabeId);
+        }
+    }
+
+    // Neue Prüfung erstellen
+    private async Task CreatePruefung()
+    {
+        try
+        {
+            neuePruefung.AufgabenIds = selectedAufgabenIds;
+            
+            var response = await Http.PostAsJsonAsync("api/pruefung", neuePruefung);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var neuePruefungResponse = await response.Content.ReadFromJsonAsync<Pruefung>();
+                
+                if (pruefungen != null && neuePruefungResponse != null)
+                {
+                    pruefungen.Add(neuePruefungResponse);
+                }
+                
+                showCreatePruefungForm = false;
+            }
+            else
+            {
+                errorMessage = $"Fehler beim Erstellen der Prüfung: {response.ReasonPhrase}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Erstellen der Prüfung: {ex.Message}";
+        }
+    }
+
+    // Abbrechen beim Erstellen einer neuen Prüfung
+    private void AbortCreatePruefung()
+    {
+        showCreatePruefungForm = false;
+    }
+
+    // Aufgaben bearbeiten - Formular anzeigen
+    private void ShowEditAufgabenForm(Pruefung pruefung)
+    {
+        selectedPruefung = pruefung;
+        selectedPruefungAufgabenIds = new List<int>(pruefung.AufgabenIds);
+        showEditAufgabenForm = true;
+    }
+
+    // Aufgabe zur Bearbeitung hinzufügen/entfernen
+    private void ToggleEditAufgabeSelection(int aufgabeId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            if (!selectedPruefungAufgabenIds.Contains(aufgabeId))
+            {
+                selectedPruefungAufgabenIds.Add(aufgabeId);
+            }
+        }
+        else
+        {
+            selectedPruefungAufgabenIds.Remove(aufgabeId);
+        }
+    }
+
+    // Prüfungsaufgaben aktualisieren
+    private async Task UpdatePruefungAufgaben()
+    {
+        if (selectedPruefung == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var aufgabenZuweisen = new AufgabenZuweisen
+            {
+                AufgabenIds = selectedPruefungAufgabenIds
+            };
+            
+            var response = await Http.PutAsJsonAsync($"api/pruefung/{selectedPruefung.Id}/aufgaben", aufgabenZuweisen);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var updatedPruefung = await response.Content.ReadFromJsonAsync<Pruefung>();
+                
+                if (pruefungen != null && updatedPruefung != null)
+                {
+                    var index = pruefungen.FindIndex(p => p.Id == updatedPruefung.Id);
+                    if (index >= 0)
+                    {
+                        pruefungen[index] = updatedPruefung;
+                    }
+                }
+                
+                showEditAufgabenForm = false;
+            }
+            else
+            {
+                errorMessage = $"Fehler beim Aktualisieren der Prüfungsaufgaben: {response.ReasonPhrase}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Aktualisieren der Prüfungsaufgaben: {ex.Message}";
+        }
+    }
+
+    // Abbrechen beim Bearbeiten der Aufgaben
+    private void AbortEditAufgaben()
+    {
+        showEditAufgabenForm = false;
+    }
+
+    // Prüfung löschen
+    private async Task DeletePruefung(int pruefungId)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Sind Sie sicher, dass Sie diese Prüfung löschen möchten?"))
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/pruefung/{pruefungId}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                if (pruefungen != null)
+                {
+                    var pruefungToDelete = pruefungen.FirstOrDefault(p => p.Id == pruefungId);
+                    if (pruefungToDelete != null)
+                    {
+                        pruefungen.Remove(pruefungToDelete);
+                    }
+                }
+            }
+            else
+            {
+                errorMessage = $"Fehler beim Löschen der Prüfung: {response.ReasonPhrase}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler beim Löschen der Prüfung: {ex.Message}";
+        }
+    }
+
+    // Datenmodelle
     public class Pruefung
     {
         public int Id { get; set; }
         public string Titel { get; set; } = string.Empty;
         public List<int> AufgabenIds { get; set; } = new();
-        public DateTime Datum { get; set; }
+        public DateTime Datum { get; set; } = DateTime.Now;
         public int Zeitlimit { get; set; } = 30; // in Minuten
     }
 
@@ -214,7 +485,20 @@ else
     public class Antwort
     {
         public int Id { get; set; }
-        public string Text { get; set; } = string.Empty; 
+        public string Text { get; set; } = string.Empty;
         public bool IstRichtig { get; set; }
+    }
+
+    public class PruefungErstellen
+    {
+        public string Titel { get; set; } = string.Empty;
+        public DateTime Datum { get; set; } = DateTime.Now.AddDays(7);
+        public int Zeitlimit { get; set; } = 30;
+        public List<int>? AufgabenIds { get; set; }
+    }
+
+    public class AufgabenZuweisen
+    {
+        public List<int> AufgabenIds { get; set; } = new();
     }
 }

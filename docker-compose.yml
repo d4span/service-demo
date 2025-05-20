@@ -5,7 +5,7 @@ services:
     build:
       context: ./AufgabenService/AufgabenService.API
     ports:
-      - "5001:8080"
+      - "5001:8080"  # Port 5001 auf Host wird auf 8080 im Container gemappt
     networks:
       - microservice-network
     environment:
@@ -23,19 +23,18 @@ services:
       - microservice-network
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - AufgabenApiUrl=http://aufgaben-api
+      - AufgabenApiUrl=http://aufgaben-api:8080
     container_name: aufgaben-client
 
   pruefung-api:
     build:
       context: ./PruefungService/PruefungService.API
     ports:
-      - "5002:8080"
+      - "5002:8080"  # Port 5002 auf Host wird auf 8080 im Container gemappt
     networks:
       - microservice-network
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - AufgabenApiUrl=http://aufgaben-api
     depends_on:
       - aufgaben-api
     container_name: pruefung-api
@@ -51,7 +50,7 @@ services:
       - microservice-network
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - PruefungApiUrl=http://pruefung-api
+      - PruefungApiUrl=http://pruefung-api:8080
     container_name: pruefung-client
 
 networks:
