@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["PruefungService.Client.csproj", "."]
-RUN dotnet restore "./PruefungService.Client.csproj"
+COPY ["PruefungService.Client.csproj", "./"]
+RUN dotnet restore "PruefungService.Client.csproj"
 COPY . .
 RUN dotnet build "PruefungService.Client.csproj" -c Release -o /app/build
 

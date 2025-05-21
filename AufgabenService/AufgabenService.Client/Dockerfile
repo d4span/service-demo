@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["AufgabenService.Client.csproj", "."]
-RUN dotnet restore "./AufgabenService.Client.csproj"
+COPY ["AufgabenService.Client.csproj", "./"]
+RUN dotnet restore "AufgabenService.Client.csproj"
 COPY . .
 RUN dotnet build "AufgabenService.Client.csproj" -c Release -o /app/build
 

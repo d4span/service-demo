@@ -1,6 +1,8 @@
 @page "/"
-@inject HttpClient Http
+@inject IAufgabenDataService AufgabenService
 @inject IJSRuntime JS
+@using AufgabenService.Client.Models
+@using AufgabenService.Client.Services.Interfaces
 @using System.Text.Json
 @using System.Text.Json.Serialization
 
@@ -124,7 +126,7 @@ else
 }
 
 @code {
-    private List<Aufgabe>? aufgaben;
+    private List<AufgabeViewModel>? aufgaben;
     private string? errorMessage;
     private bool antwortGeprüft = false;
     
@@ -137,7 +139,7 @@ else
     {
         try
         {
-            aufgaben = await Http.GetFromJsonAsync<List<Aufgabe>>("api/aufgaben");
+            aufgaben = (await AufgabenService.GetAllAufgabenAsync()).ToList();
         }
         catch (Exception ex)
         {
@@ -170,7 +172,7 @@ else
     }
     
     // Formular für Aufgabe bearbeiten anzeigen
-    private void ShowEditAufgabeForm(Aufgabe aufgabe)
+    private void ShowEditAufgabeForm(AufgabeViewModel aufgabe)
     {
         aktuelleAufgabe = new AufgabeViewModel
         {
@@ -263,23 +265,22 @@ else
             }
             
             // DTO erstellen
-            var aufgabeDto = new AufgabeErstellenDto
+            var aufgabeDto = new AufgabeErstellenModel
             {
                 Frage = aktuelleAufgabe.Frage,
-                Antworten = aktuelleAufgabe.Antworten.Select(a => new AntwortErstellenDto
+                Antworten = aktuelleAufgabe.Antworten.Select(a => new AnwortErstellenModel
                 {
                     Text = a.Text,
                     IstRichtig = a.IstRichtig
                 }).ToList()
             };
             
-            // API-Aufruf
-            var response = await Http.PostAsJsonAsync("api/aufgaben", aufgabeDto);
+            // API-Aufruf über den Service
+            var neueAufgabe = await AufgabenService.CreateAufgabeAsync(aufgabeDto);
             
-            if (response.IsSuccessStatusCode)
+            if (neueAufgabe != null)
             {
-                var neueAufgabe = await response.Content.ReadFromJsonAsync<Aufgabe>();
-                if (aufgaben != null && neueAufgabe != null)
+                if (aufgaben != null)
                 {
                     aufgaben.Add(neueAufgabe);
                 }
@@ -289,7 +290,7 @@ else
             }
             else
             {
-                errorMessage = $"Fehler beim Erstellen der Aufgabe: {response.StatusCode}";
+                errorMessage = "Fehler beim Erstellen der Aufgabe.";
             }
         }
         catch (Exception ex)
@@ -329,23 +330,22 @@ else
             }
             
             // DTO erstellen
-            var aufgabeDto = new AufgabeAktualisierenDto
+            var aufgabeDto = new AufgabeErstellenModel
             {
                 Frage = aktuelleAufgabe.Frage,
-                Antworten = aktuelleAufgabe.Antworten.Select(a => new AntwortErstellenDto
+                Antworten = aktuelleAufgabe.Antworten.Select(a => new AnwortErstellenModel
                 {
                     Text = a.Text,
                     IstRichtig = a.IstRichtig
                 }).ToList()
             };
             
-            // API-Aufruf
-            var response = await Http.PutAsJsonAsync($"api/aufgaben/{aktuelleAufgabe.Id}", aufgabeDto);
+            // API-Aufruf über den Service
+            var aktualisierteAufgabe = await AufgabenService.UpdateAufgabeAsync(aktuelleAufgabe.Id, aufgabeDto);
             
-            if (response.IsSuccessStatusCode)
+            if (aktualisierteAufgabe != null)
             {
-                var aktualisierteAufgabe = await response.Content.ReadFromJsonAsync<Aufgabe>();
-                if (aufgaben != null && aktualisierteAufgabe != null)
+                if (aufgaben != null)
                 {
                     var index = aufgaben.FindIndex(a => a.Id == aktualisierteAufgabe.Id);
                     if (index >= 0)
@@ -359,7 +359,7 @@ else
             }
             else
             {
-                errorMessage = $"Fehler beim Aktualisieren der Aufgabe: {response.StatusCode}";
+                errorMessage = "Fehler beim Aktualisieren der Aufgabe.";
             }
         }
         catch (Exception ex)
@@ -378,9 +378,9 @@ else
                 return;
             }
             
-            var response = await Http.DeleteAsync($"api/aufgaben/{id}");
+            var erfolgreich = await AufgabenService.DeleteAufgabeAsync(id);
             
-            if (response.IsSuccessStatusCode)
+            if (erfolgreich)
             {
                 if (aufgaben != null)
                 {
@@ -395,61 +395,12 @@ else
             }
             else
             {
-                errorMessage = $"Fehler beim Löschen der Aufgabe: {response.StatusCode}";
+                errorMessage = "Fehler beim Löschen der Aufgabe.";
             }
         }
         catch (Exception ex)
         {
             errorMessage = $"Fehler beim Löschen der Aufgabe: {ex.Message}";
         }
-    }
-    
-    // Datenmodelle
-    public class Aufgabe
-    {
-        public int Id { get; set; }
-        public string Frage { get; set; } = string.Empty;
-        public List<Antwort> Antworten { get; set; } = new();
-    }
-
-    public class Antwort
-    {
-        public int Id { get; set; }
-        public string Text { get; set; } = string.Empty; 
-        public bool IstRichtig { get; set; }
-    }
-    
-    // View-Modelle für das Formular
-    public class AufgabeViewModel
-    {
-        public int Id { get; set; }
-        public string Frage { get; set; } = string.Empty;
-        public List<AntwortViewModel> Antworten { get; set; } = new();
-    }
-    
-    public class AntwortViewModel
-    {
-        public int Id { get; set; }
-        public string Text { get; set; } = string.Empty;
-        public bool IstRichtig { get; set; }
-    }
-    
-    // DTOs für API-Aufrufe
-    public class AufgabeErstellenDto
-    {
-        public string Frage { get; set; } = string.Empty;
-        public List<AntwortErstellenDto> Antworten { get; set; } = new();
-    }
-    
-    public class AntwortErstellenDto
-    {
-        public string Text { get; set; } = string.Empty;
-        public bool IstRichtig { get; set; }
-    }
-    
-    public class AufgabeAktualisierenDto
-    {
-        public string Frage { get; set; } = string.Empty;
-        public List<AntwortErstellenDto> Antworten { get; set; } = new();
     }
 }

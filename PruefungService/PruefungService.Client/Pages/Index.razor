@@ -1,6 +1,8 @@
 @page "/"
-@inject HttpClient Http
+@inject IPruefungDataService PruefungService
 @inject IJSRuntime JS
+@using PruefungService.Client.Models
+@using PruefungService.Client.Services.Interfaces
 @using System.Text.Json
 @using System.Text.Json.Serialization
 
@@ -179,11 +181,11 @@ else
 }
 
 @code {
-    private List<Pruefung>? pruefungen;
-    private List<Aufgabe>? alleAufgaben;
-    private List<Aufgabe>? aktuellePruefungsaufgaben;
-    private Pruefung? aktuellePruefung;
-    private Pruefung? selectedPruefung;
+    private List<PruefungViewModel>? pruefungen;
+    private List<AufgabeViewModel>? alleAufgaben;
+    private List<AufgabeViewModel>? aktuellePruefungsaufgaben;
+    private PruefungViewModel? aktuellePruefung;
+    private PruefungViewModel? selectedPruefung;
     private string? errorMessage;
     
     private bool pruefungBeendet = false;
@@ -193,7 +195,7 @@ else
     
     // Neue Prüfung erstellen
     private bool showCreatePruefungForm = false;
-    private PruefungErstellen neuePruefung = new();
+    private PruefungErstellenModel neuePruefung = new();
     private List<int> selectedAufgabenIds = new();
     
     // Prüfungsaufgaben bearbeiten
@@ -205,8 +207,8 @@ else
         try
         {
             // Lade Prüfungen und alle Aufgaben
-            pruefungen = await Http.GetFromJsonAsync<List<Pruefung>>("api/pruefung");
-            alleAufgaben = await Http.GetFromJsonAsync<List<Aufgabe>>("api/aufgaben");
+            pruefungen = (await PruefungService.GetAllPruefungenAsync()).ToList();
+            alleAufgaben = (await PruefungService.GetAllAufgabenAsync()).ToList();
         }
         catch (Exception ex)
         {
@@ -219,10 +221,10 @@ else
         try
         {
             // Prüfung abrufen
-            aktuellePruefung = await Http.GetFromJsonAsync<Pruefung>($"api/pruefung/{pruefungId}");
+            aktuellePruefung = await PruefungService.GetPruefungByIdAsync(pruefungId);
             
             // Aufgaben für diese Prüfung abrufen
-            aktuellePruefungsaufgaben = await Http.GetFromJsonAsync<List<Aufgabe>>($"api/pruefung/{pruefungId}/aufgaben");
+            aktuellePruefungsaufgaben = (await PruefungService.GetAufgabenForPruefungAsync(pruefungId)).ToList();
             
             pruefungBeendet = false;
             
@@ -293,7 +295,7 @@ else
     // Prüfung erstellen - Formular anzeigen
     private void ShowCreatePruefungForm()
     {
-        neuePruefung = new PruefungErstellen
+        neuePruefung = new PruefungErstellenModel
         {
             Titel = string.Empty,
             Datum = DateTime.Now.AddDays(7),
@@ -326,13 +328,11 @@ else
         {
             neuePruefung.AufgabenIds = selectedAufgabenIds;
             
-            var response = await Http.PostAsJsonAsync("api/pruefung", neuePruefung);
+            var neuePruefungResponse = await PruefungService.CreatePruefungAsync(neuePruefung);
             
-            if (response.IsSuccessStatusCode)
+            if (neuePruefungResponse != null)
             {
-                var neuePruefungResponse = await response.Content.ReadFromJsonAsync<Pruefung>();
-                
-                if (pruefungen != null && neuePruefungResponse != null)
+                if (pruefungen != null)
                 {
                     pruefungen.Add(neuePruefungResponse);
                 }
@@ -341,7 +341,7 @@ else
             }
             else
             {
-                errorMessage = $"Fehler beim Erstellen der Prüfung: {response.ReasonPhrase}";
+                errorMessage = "Fehler beim Erstellen der Prüfung.";
             }
         }
         catch (Exception ex)
@@ -357,7 +357,7 @@ else
     }
 
     // Aufgaben bearbeiten - Formular anzeigen
-    private void ShowEditAufgabenForm(Pruefung pruefung)
+    private void ShowEditAufgabenForm(PruefungViewModel pruefung)
     {
         selectedPruefung = pruefung;
         selectedPruefungAufgabenIds = new List<int>(pruefung.AufgabenIds);
@@ -390,18 +390,16 @@ else
 
         try
         {
-            var aufgabenZuweisen = new AufgabenZuweisen
+            var aufgabenZuweisen = new AufgabenZuweisenModel
             {
                 AufgabenIds = selectedPruefungAufgabenIds
             };
             
-            var response = await Http.PutAsJsonAsync($"api/pruefung/{selectedPruefung.Id}/aufgaben", aufgabenZuweisen);
+            var updatedPruefung = await PruefungService.UpdatePruefungAufgabenAsync(selectedPruefung.Id, aufgabenZuweisen);
             
-            if (response.IsSuccessStatusCode)
+            if (updatedPruefung != null)
             {
-                var updatedPruefung = await response.Content.ReadFromJsonAsync<Pruefung>();
-                
-                if (pruefungen != null && updatedPruefung != null)
+                if (pruefungen != null)
                 {
                     var index = pruefungen.FindIndex(p => p.Id == updatedPruefung.Id);
                     if (index >= 0)
@@ -414,7 +412,7 @@ else
             }
             else
             {
-                errorMessage = $"Fehler beim Aktualisieren der Prüfungsaufgaben: {response.ReasonPhrase}";
+                errorMessage = "Fehler beim Aktualisieren der Prüfungsaufgaben.";
             }
         }
         catch (Exception ex)
@@ -439,9 +437,9 @@ else
 
         try
         {
-            var response = await Http.DeleteAsync($"api/pruefung/{pruefungId}");
+            var result = await PruefungService.DeletePruefungAsync(pruefungId);
             
-            if (response.IsSuccessStatusCode)
+            if (result)
             {
                 if (pruefungen != null)
                 {
@@ -454,49 +452,12 @@ else
             }
             else
             {
-                errorMessage = $"Fehler beim Löschen der Prüfung: {response.ReasonPhrase}";
+                errorMessage = "Fehler beim Löschen der Prüfung.";
             }
         }
         catch (Exception ex)
         {
             errorMessage = $"Fehler beim Löschen der Prüfung: {ex.Message}";
         }
-    }
-
-    // Datenmodelle
-    public class Pruefung
-    {
-        public int Id { get; set; }
-        public string Titel { get; set; } = string.Empty;
-        public List<int> AufgabenIds { get; set; } = new();
-        public DateTime Datum { get; set; } = DateTime.Now;
-        public int Zeitlimit { get; set; } = 30; // in Minuten
-    }
-
-    public class Aufgabe
-    {
-        public int Id { get; set; }
-        public string Frage { get; set; } = string.Empty;
-        public List<Antwort> Antworten { get; set; } = new();
-    }
-
-    public class Antwort
-    {
-        public int Id { get; set; }
-        public string Text { get; set; } = string.Empty;
-        public bool IstRichtig { get; set; }
-    }
-
-    public class PruefungErstellen
-    {
-        public string Titel { get; set; } = string.Empty;
-        public DateTime Datum { get; set; } = DateTime.Now.AddDays(7);
-        public int Zeitlimit { get; set; } = 30;
-        public List<int>? AufgabenIds { get; set; }
-    }
-
-    public class AufgabenZuweisen
-    {
-        public List<int> AufgabenIds { get; set; } = new();
     }
 }
