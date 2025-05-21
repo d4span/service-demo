@@ -5,10 +5,21 @@ EXPOSE 443
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["AufgabenService.API.csproj", "."]
-RUN dotnet restore "./AufgabenService.API.csproj"
+
+# Copy project files
+COPY ["AufgabenService.API/AufgabenService.API.csproj", "AufgabenService.API/"]
+COPY ["AufgabenService.Application/AufgabenService.Application.csproj", "AufgabenService.Application/"]
+COPY ["AufgabenService.Domain/AufgabenService.Domain.csproj", "AufgabenService.Domain/"]
+COPY ["AufgabenService.Infrastructure/AufgabenService.Infrastructure.csproj", "AufgabenService.Infrastructure/"]
+
+# Restore dependencies
+RUN dotnet restore "AufgabenService.API/AufgabenService.API.csproj"
+
+# Copy everything else
 COPY . .
-WORKDIR "/src/."
+
+# Build
+WORKDIR "/src/AufgabenService.API"
 RUN dotnet build "AufgabenService.API.csproj" -c Release -o /app/build
 
 FROM build AS publish
